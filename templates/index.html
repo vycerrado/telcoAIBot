@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Telecom AI Bot</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            align-items: center;
+        }
+        #container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f4f4;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+        }
+        h1 {
+            text-align: center;
+        }
+        button {
+            display: inline-block; /* Make buttons full width */
+            margin: 10px auto; /* Center-align buttons horizontally */
+            background-color: #61a6f1;
+            color: #fff;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+        }
+        #buttonContainer {
+            display: flex;
+            justify-content: center; /* Center-align buttons horizontally */
+        }
+
+        button:disabled {
+            background-color: #ddd;
+            cursor: not-allowed;
+        }
+        #audioWaveform {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 10px;
+            text-align: center;
+        }
+        #audioPlayer {
+            width: 100%;
+        }
+        .recording {
+        background-color: #86e486; /* Green background color */
+        }
+
+        /* Style for the stopped state (red) */
+        .stopped {
+            background-color: #f65050a7; /* Red background color */
+        }
+
+        .user-message {
+            color: #0074cc;
+        }
+
+        .bot-message {
+            color: #333;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="page-content">
+        <div id="container">
+            <h1>Telecom AI Bot</h1>
+            <div id="buttonContainer">
+                <button id="startRecord">Record Question</button>
+                <button id="stopRecord" disabled>Discard Question</button>
+                <button id="sendAudio" disabled>Ask Expert</button>
+            </div>
+            <div id="audioWaveform"></div>
+            <audio id="audioPlayer" controls style="display: none;"></audio>
+
+            <div id="chat-container">
+                <div id="chat">
+                    <div class="bot-message">Bot: Hello! How can I assist you today?</div>
+                </div>
+            </div>
+
+        </div>
+
+        
+
+    </div>
+
+    <script>
+        function addUserMessage(message) {
+            const chat = document.getElementById("chat");
+            const userMessage = document.createElement("div");
+            userMessage.className = "user-message";
+            userMessage.innerText = "You: " + message;
+            chat.appendChild(userMessage);
+        }
+
+        function addBotMessage(message) {
+            const chat = document.getElementById("chat");
+            const botMessage = document.createElement("div");
+            botMessage.className = "bot-message";
+            botMessage.innerText = "Bot: " + message;
+            chat.appendChild(botMessage);
+        }
+
+        let mediaRecorder;
+        let audioChunks = [];
+        let audioPlayer = document.getElementById('audioPlayer');
+
+        const startRecordButton = document.getElementById('startRecord');
+        const stopRecordButton = document.getElementById('stopRecord');
+        const sendAudioButton = document.getElementById('sendAudio');
+        const audioWaveform = document.getElementById('audioWaveform');
+
+
+        document.addEventListener('keydown', function(event) {
+            if (event.key === ' ' || event.key === 'Spacebar') {
+                // Prevent the default spacebar behavior (scrolling the page)
+                event.preventDefault();
+
+                // Trigger a click event on the button
+                startRecordButton.click();
+            }
+        });
+
+        document.addEventListener('keyup', function(event) {
+            if (event.key === ' ' || event.key === 'Spacebar') {
+                // Prevent the default spacebar behavior (scrolling the page)
+                event.preventDefault();
+
+                // Trigger a click event on the second button when spacebar is released
+                stopRecordButton.click();
+            }
+        });
+
+        startRecordButton.addEventListener('click', startRecording);
+        stopRecordButton.addEventListener('click', stopRecording);
+        sendAudioButton.addEventListener('click', sendAudio);
+
+        let conversation_log = "BOT: What would you like to know about today?";
+
+        async function startRecording() {
+            audioWaveform.classList.add('recording');
+            audioWaveform.classList.remove('stopped');
+
+            audioChunks = [];
+            
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+            mediaRecorder = new MediaRecorder(stream, {
+                mimeType : 'audio/webm',
+                codecs : "opus",
+                });
+
+            mediaRecorder.ondataavailable = event => {
+                if (event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            };
+            mediaRecorder.onstop = () => {
+                const audioBlob = new Blob(audioChunks, {'type': 'audio/webm; codecs=opus'});
+                audioPlayer.src = URL.createObjectURL(audioBlob);
+                audioPlayer.style.display = 'block';
+                sendAudioButton.disabled = false;
+            };
+            mediaRecorder.start();
+            console.log(MediaRecorder.isTypeSupported("audio/wav"))  // return false
+            console.log(MediaRecorder.isTypeSupported("audio/ogg"))  // return false
+            console.log(MediaRecorder.isTypeSupported("audio/webm")) // return true
+            startRecordButton.disabled = true;
+            stopRecordButton.disabled = false;
+            audioWaveform.innerHTML = 'Recording...';
+            
+        }
+
+        function stopRecording() {
+            audioWaveform.classList.add('stopped');
+            audioWaveform.classList.remove('recording');
+            mediaRecorder.stop();
+            startRecordButton.disabled = false;
+            stopRecordButton.disabled = true;
+            sendAudioButton.disabled = false;
+            audioWaveform.innerHTML = 'Recording stopped.';
+        }
+
+        async function sendAudio() {
+            audioWaveform.innerHTML = "Thinking ..."
+
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const formData = new FormData();
+            console.log(conversation_log)
+
+            formData.append('audio_file', audioBlob, 'audio.webm');
+            formData.append('conversation_log', conversation_log);
+
+            const response = await fetch('/upload-audio/', {
+                method: 'POST',
+                body: formData
+            });
+
+            const response_audio = await response.blob();
+            
+            // Create a URL for the audio blob
+            const audioURL = URL.createObjectURL(response_audio);
+
+            // Set the audio source and play it automatically
+            audioPlayer.src = audioURL;
+            audioPlayer.play();
+            
+            // audioWaveform.innerHTML = 'Response: ' + response.headers.get('bot_response');
+            addUserMessage(response.headers.get('recognized_text'));
+            addBotMessage(response.headers.get('bot_response'));
+            conversation_log += "\n" + response.headers.get('recognized_text')
+            conversation_log += "\n" + response.headers.get('bot_response')
+
+            sendAudioButton.disabled = true;
+        }
+    </script>
+</body>
+</html>
